@@ -1,0 +1,28 @@
+#!/bin/sh /etc/rc.common
+#
+# Enforce the offload-switch goal set in /etc/config/offload at boot.
+#
+# The vendor helpers race each other and can re-arm acceleration behind the
+# user's back:
+#   START=26  qca-nss-ecm   starts the engine if its rc.d link is present
+#   START=27  qca-nss-pbuf  calls /etc/init.d/qca-nss-ecm start unconditionally
+#
+# Running last (START=95) makes the uci goal authoritative again, so a device
+# left in "statistics" mode stays there across a reboot.
+
+START=95
+
+RECONCILE=/usr/libexec/offload-switch/reconcile.sh
+
+start() {
+	[ -x "$RECONCILE" ] || return 0
+	"$RECONCILE" > /dev/null 2>&1
+}
+
+boot() {
+	start
+}
+
+# Runtime changes go through the RPC backend, so stop/restart are no-ops.
+stop()  { return 0; }
+reload() { start; }

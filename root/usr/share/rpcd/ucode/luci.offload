@@ -1,0 +1,314 @@
+#!/usr/bin/ucode
+
+'use strict';
+
+import { popen, readfile, stat } from 'fs';
+import { cursor } from 'uci';
+
+const CONFIG = 'offload';
+const RECONCILE = '/usr/libexec/offload-switch/reconcile.sh';
+
+/* ------------------------------------------------------------------ *
+ * Small helpers
+ * ------------------------------------------------------------------ */
+
+function exec(cmd) {
+	let p = popen(cmd + ' 2>&1', 'r');
+	if (!p)
+		return { code: -1, stdout: '' };
+	let out = p.read('all');
+	let code = p.close();
+	if (type(out) == 'string')
+		out = replace(out, /^\s+|\s+$/g, '');
+	return { code: code, stdout: out || '' };
+}
+
+function readtrim(path) {
+	let s = readfile(path);
+	return type(s) == 'string' ? replace(s, /^\s+|\s+$/g, '') : '';
+}
+
+function exists(path) {
+	return !!stat(path);
+}
+
+function is_val(v) {
+	return v === '1' || v === true || v === 1;
+}
+
+/* ------------------------------------------------------------------ *
+ * Platform / engine detection
+ * ------------------------------------------------------------------ */
+
+function dist_info() {
+	let rel = readfile('/etc/openwrt_release') || '';
+	let info = {};
+
+	for (let line in split(rel, '\n')) {
+		let m = match(line, /^(DISTRIB_[A-Z]+)='([^']*)'/);
+		if (m)
+			info[m[1]] = m[2];
+	}
+
+	return {
+		release: info.DISTRIB_RELEASE || '',
+		target: info.DISTRIB_TARGET || '',
+		arch: info.DISTRIB_ARCH || '',
+		description: info.DISTRIB_DESCRIPTION || '',
+		model: readtrim('/tmp/sysinfo/model'),
+		board: readtrim('/tmp/sysinfo/board_name')
+	};
+}
+
+function has_firewall4() {
+	return exists('/usr/share/ucode/fw4.uc') || exists('/sbin/fw4') || exists('/usr/sbin/fw4');
+}
+
+function firewall_state() {
+	let u = cursor();
+	u.load('firewall');
+
+	let fullcone = false;
+	let flow_offloading = false;
+	let flow_offloading_hw = false;
+
+	u.foreach('firewall', 'defaults', (s) => {
+		if (is_val(s.fullcone)) fullcone = true;
+		if (is_val(s.flow_offloading)) flow_offloading = true;
+		if (is_val(s.flow_offloading_hw)) flow_offloading_hw = true;
+	});
+
+	u.foreach('firewall', 'zone', (s) => {
+		if (is_val(s.fullcone)) fullcone = true;
+	});
+
+	return {
+		fullcone: fullcone,
+		flow_offloading: flow_offloading,
+		flow_offloading_hw: flow_offloading_hw
+	};
+}
+
+function nss_present() {
+	return exists('/etc/init.d/qca-nss-ecm') ||
+		exists('/sys/module/ecm') ||
+		exists('/lib/netifd/offload/disable_offloads.sh');
+}
+
+/* Best-effort check for the SonIC FullCone build, which patches the firewall
+ * zone view and force-writes flow_offloading=0 on every form save. */
+function fullcone_build() {
+	return exists('/www/luci-static/resources/view/firewall/zones-sonic.js') ||
+		exists('/usr/share/luci/menu.d/luci-app-fullconenat-sonic.json') ||
+		exists('/www/luci-static/resources/tools/fullconenat-sonic.js');
+}
+
+function nss_active() {
+	return exists('/sys/module/ecm');
+}
+
+function bcm_steering_present() {
+	return exists('/usr/libexec/platform/packet-steering.sh') ||
+		exists('/usr/libexec/network/packet-steering.uc');
+}
+
+function detect_platform() {
+	let d = dist_info();
+	let target = d.target;
+	let vendor, platform;
+
+	if (nss_present()) {
+		vendor = 'qualcomm';
+		platform = 'Qualcomm NSS / ECM';
+	}
+	else if (match(target, /^mediatek\//)) {
+		vendor = 'mediatek';
+		platform = 'MediaTek PPE / WED';
+	}
+	else if (match(target, /^airoha/)) {
+		vendor = 'airoha';
+		platform = 'Airoha PPE';
+	}
+	else if (match(target, /^(bcm4908|bcm53xx|bcm47xx)/)) {
+		vendor = 'broadcom';
+		platform = 'Broadcom accelerator';
+	}
+	else {
+		vendor = 'generic';
+		platform = 'Software flowtable';
+	}
+
+	return { vendor: vendor, platform: platform, detect: d };
+}
+
+function engine_list(fwdef, plat) {
+	let engines = [];
+
+	if (has_firewall4()) {
+		engines.push({
+			id: 'flowtable',
+			label: 'Netfilter flowtable',
+			present: true,
+			active: fwdef.flow_offloading || fwdef.flow_offloading_hw,
+			hardware: fwdef.flow_offloading_hw,
+			controllable: true,
+			locked: fwdef.fullcone,
+			note: fwdef.fullcone
+				? 'Locked while FullCone NAT is enabled: flowtable offload can make FullCone inbound mapping inconsistent.'
+				: ''
+		});
+	}
+
+	if (nss_present()) {
+		engines.push({
+			id: 'nss-ecm',
+			label: 'Qualcomm NSS ECM (hardware)',
+			present: true,
+			active: nss_active(),
+			hardware: true,
+			controllable: true,
+			note: nss_active()
+				? 'Running: accelerated flows bypass conntrack, so per-host accounting (nlbwmon) under-reports.'
+				: 'Stopped.'
+		});
+	}
+
+	if (plat.vendor == 'mediatek' || plat.vendor == 'airoha') {
+		engines.push({
+			id: plat.vendor + '-ppe',
+			label: plat.vendor == 'mediatek' ? 'MediaTek PPE / WED (hardware)' : 'Airoha PPE (hardware)',
+			present: true,
+			active: fwdef.flow_offloading_hw,
+			hardware: true,
+			controllable: false,
+			note: 'Hardware offload rides on the flowtable hardware flag and follows its control above.'
+		});
+	}
+
+	if (bcm_steering_present()) {
+		engines.push({
+			id: 'packet-steering',
+			label: 'Hardware packet steering',
+			present: true,
+			active: fwdef.flow_offloading || fwdef.flow_offloading_hw,
+			hardware: true,
+			controllable: false,
+			note: 'Steering follows the flowtable flags; there is no separate service.'
+		});
+	}
+
+	return engines;
+}
+
+function status_payload() {
+	let plat = detect_platform();
+	let fwdef = firewall_state();
+	let u = cursor();
+	u.load(CONFIG);
+
+	return {
+		platform: plat.platform,
+		vendor: plat.vendor,
+		detect: plat.detect,
+		fullcone: fwdef.fullcone,
+		fullcone_build: fullcone_build(),
+		mode: u.get(CONFIG, 'config', 'mode') || 'accelerate',
+		engines: engine_list(fwdef, plat)
+	};
+}
+
+/* ------------------------------------------------------------------ *
+ * Apply
+ * ------------------------------------------------------------------ */
+
+function set_mode(mode) {
+	let u = cursor();
+	u.load(CONFIG);
+
+	let sid = null;
+	u.foreach(CONFIG, 'offload', (s) => { if (!sid) sid = s['.name']; });
+	if (!sid)
+		sid = u.add(CONFIG, 'offload', 'config');
+	u.set(CONFIG, sid, 'mode', mode);
+	u.commit(CONFIG);
+}
+
+function run_reconcile() {
+	let actions = [];
+	let notes = [];
+	let r = exec(RECONCILE);
+
+	for (let line in split(r.stdout, '\n')) {
+		let m = match(line, /^ACTION:\s*(.*)$/);
+		if (m) { push(actions, m[1]); continue; }
+		m = match(line, /^NOTE:\s*(.*)$/);
+		if (m) push(notes, m[1]);
+	}
+
+	return { code: r.code, actions: actions, notes: notes, output: r.stdout };
+}
+
+function apply(mode, reboot) {
+	let fwdef = firewall_state();
+	let notes = [];
+
+	if (mode == 'accelerate' && fwdef.fullcone)
+		push(notes, 'FullCone NAT is enabled: flowtable offload kept disabled to keep inbound FullCone mapping consistent.');
+
+	set_mode(mode);
+
+	let rec = run_reconcile();
+	let actions = rec.actions;
+
+	if (rec.code !== 0)
+		push(notes, 'Reconciler exited with code ' + rec.code + '.');
+
+	if (reboot) {
+		push(actions, 'Rebooting to apply cleanly');
+		exec('(sleep 2; /sbin/reboot) >/dev/null 2>&1 &');
+	}
+	else {
+		/* Flowtable changes need a firewall reload to take effect now; the
+		 * vendor engine is already live after the reconciler ran. */
+		let fw = exec('/etc/init.d/firewall reload');
+		if (fw.code !== 0)
+			push(notes, 'firewall reload returned code ' + fw.code + '.');
+		push(notes, 'Applied at runtime. Some accelerator state (module front-end selection, residual flows) may only reset after a reboot.');
+	}
+
+	if (!length(actions))
+		push(actions, mode == 'statistics' ? 'Already in statistics mode; nothing to change.' : 'Already in performance mode; nothing to change.');
+
+	return {
+		success: true,
+		mode: mode,
+		reboot: !!reboot,
+		actions: actions,
+		notes: notes,
+		status: status_payload()
+	};
+}
+
+/* ------------------------------------------------------------------ *
+ * RPC methods
+ * ------------------------------------------------------------------ */
+
+const methods = {
+	status: {
+		call: function() {
+			return status_payload();
+		}
+	},
+
+	apply: {
+		call: function(request) {
+			let mode = request?.args?.mode;
+			let reboot = request?.args?.reboot === true || request?.args?.reboot === '1';
+			if (mode != 'statistics' && mode != 'accelerate')
+				return { success: false, error: 'invalid mode' };
+			return apply(mode, reboot);
+		}
+	}
+};
+
+return { 'luci.offload': methods };

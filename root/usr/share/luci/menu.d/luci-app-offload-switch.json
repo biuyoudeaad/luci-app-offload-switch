@@ -1,0 +1,13 @@
+{
+	"admin/network/offload": {
+		"title": "Traffic Offload",
+		"order": 45,
+		"action": {
+			"type": "view",
+			"path": "offload/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-offload-switch" ]
+		}
+	}
+}

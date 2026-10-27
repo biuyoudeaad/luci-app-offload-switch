@@ -1,0 +1,15 @@
+#!/bin/sh
+
+[ -e /etc/config/offload ] || {
+	uci -q batch <<-EOF
+		set offload.config=offload
+		set offload.config.mode='accelerate'
+		commit offload
+	EOF
+}
+
+# Enforce the selected goal at boot, after the vendor NSS/ECM helpers
+# (qca-nss-ecm START=26, qca-nss-pbuf START=27) have run.
+[ -x /etc/init.d/offload-switch ] && /etc/init.d/offload-switch enable
+
+exit 0

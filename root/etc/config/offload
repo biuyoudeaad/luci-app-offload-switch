@@ -1,0 +1,3 @@
+
+config offload 'config'
+	option mode 'accelerate'

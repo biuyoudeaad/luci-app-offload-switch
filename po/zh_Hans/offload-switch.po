@@ -1,0 +1,324 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:199
+msgid "Accelerators enabled where safe"
+msgstr "在安全前提下启用各加速引擎"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:72
+msgid "Active"
+msgstr "已启用"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:147
+msgid ""
+"Active engines forward established traffic outside the normal CPU path. That "
+"is what makes the router fast, and also what makes per-host accounting under-"
+"report."
+msgstr ""
+"已启用的加速引擎会绕过常规 CPU 路径转发已建立的流量。这既让路由器更快，也会导"
+"致按主机统计流量时少计。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:191
+msgid "All accelerators stopped"
+msgstr "停止全部加速引擎"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:335
+msgid "Applied:"
+msgstr "已应用："
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:291
+msgid "Apply %s"
+msgstr "应用%s"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:290
+msgid "Apply (no change)"
+msgstr "应用（无更改）"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:327
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:349
+msgid "Apply failed: %s"
+msgstr "应用失败：%s"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:268
+msgid "Apply method"
+msgstr "应用方式"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:318
+msgid "Applying…"
+msgstr "正在应用…"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:279
+msgid ""
+"Changes are applied at runtime — services are started/stopped and the "
+"firewall is reloaded. Existing accelerated connections may linger, so "
+"accounting can stay inaccurate until those connections expire or the device "
+"reboots."
+msgstr ""
+"更改会在运行时生效——启动/停止相关服务并重载防火墙。已加速的连接可能会残留，因"
+"此在它们过期或设备重启之前，流量统计可能仍不准确。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:205
+msgid "Choose a goal"
+msgstr "选择目标"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:81
+msgid "Controllable"
+msgstr "可控"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:134
+msgid "Current goal"
+msgstr "当前目标"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:145
+msgid "Detected acceleration engines"
+msgstr "检测到的加速引擎"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:138
+msgid "Disabled"
+msgstr "已禁用"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:138
+msgid "Enabled"
+msgstr "已启用"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:189
+msgid "Everything off — see every packet."
+msgstr "全部关闭——统计每一个数据包。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:197
+msgid "Everything on — fastest routing."
+msgstr "全部开启——最快的转发性能。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:223
+msgid ""
+"Existing connections may be interrupted briefly while the switch happens."
+msgstr "切换过程中现有连接可能会短暂中断。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:248
+msgid ""
+"Flowtable offload can make inbound FullCone mapping inconsistent, so it "
+"stays disabled in this mode. Hardware acceleration (NSS/ECM) is unaffected. "
+"To also enable flowtable offload, disable FullCone NAT first."
+msgstr ""
+"flowtable 卸载可能导致入站 FullCone 映射不一致，因此该模式下保持关闭。硬件加"
+"速（NSS/ECM）不受影响。如需同时启用 flowtable 卸载，请先关闭 FullCone NAT。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:235
+msgid "Flowtable offload is enabled (software + hardware)."
+msgstr "flowtable 卸载已启用（软件 + 硬件）。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:234
+msgid ""
+"Flowtable offload is kept off because FullCone NAT is enabled (see note "
+"below)."
+msgstr "由于已启用 FullCone NAT，flowtable 卸载保持关闭（见下方说明）。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:138
+msgid "FullCone NAT"
+msgstr "FullCone NAT"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:247
+msgid "FullCone NAT is enabled."
+msgstr "已启用 FullCone NAT。"
+
+#: package/emortal/luci-app-offload-switch/root/usr/share/rpcd/acl.d/luci-app-offload-switch.json:3
+msgid "Grant access to luci-app-offload-switch"
+msgstr "授予对 luci-app-offload-switch 的访问权限"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:83
+msgid "Hardware"
+msgstr "硬件"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:278
+msgid "If you do not reboot:"
+msgstr "如果不重启："
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:79
+msgid "Locked by FullCone"
+msgstr "被 FullCone 锁定"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:193
+msgid "Lower maximum throughput / higher CPU load"
+msgstr "最高吞吐量较低 / CPU 负载较高"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:200
+msgid "Maximum throughput, lowest CPU load"
+msgstr "最高吞吐量，最低 CPU 负载"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:136
+msgid "Model"
+msgstr "型号"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:218
+msgid "Netfilter flowtable offload is turned off (software and hardware)."
+msgstr "netfilter flowtable 卸载已关闭（软件和硬件）。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:150
+msgid ""
+"No hardware accelerator was detected; only the software network path is used."
+msgstr "未检测到硬件加速引擎；仅使用软件网络转发路径。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:254
+msgid "Note on the firewall page."
+msgstr "关于防火墙页面的说明。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:73
+msgid "Off"
+msgstr "已关闭"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:274
+msgid ""
+"Only a reboot fully clears residual accelerated flows and applies the module "
+"front-end selection. It costs one short disconnection."
+msgstr ""
+"只有重启才能完全清除残留的加速流并应用模块前端选择。代价是一次短暂断网。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:201
+msgid "Per-host accounting may under-report"
+msgstr "按主机统计可能少计"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:222
+msgid "Per-host accounting tools (nlbwmon) and conntrack see every packet."
+msgstr "按主机统计工具（nlbwmon）和 conntrack 可看到每个数据包。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:127
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:131
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:231
+msgid "Performance"
+msgstr "性能"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:196
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:291
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:336
+msgid "Performance mode"
+msgstr "性能模式"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:135
+msgid "Platform"
+msgstr "平台"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:77
+msgid "Read-only"
+msgstr "只读"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:272
+msgid ""
+"Reboot after applying for a clean state (recommended when switching hardware "
+"engines)"
+msgstr "应用后重启以获得干净状态（切换硬件引擎时推荐）"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:342
+msgid "Rebooting…"
+msgstr "正在重启…"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:319
+msgid "Reconfiguring traffic acceleration…"
+msgstr "正在重新配置流量加速…"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:300
+msgid "Refresh"
+msgstr "刷新"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:83
+msgid "Software"
+msgstr "软件"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:127
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:130
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:216
+msgid "Statistics"
+msgstr "统计"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:188
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:291
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:336
+msgid "Statistics mode"
+msgstr "统计模式"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:119
+msgid ""
+"Switch every traffic accelerator on or off in one place: choose accurate per-"
+"host statistics or maximum routing throughput. The platform and its "
+"accelerators are detected automatically."
+msgstr ""
+"在一处统一切换所有流量加速引擎的开关：在精确的按主机统计与最高转发性能之间取"
+"舍。平台及其加速引擎会自动检测。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:137
+msgid "Target"
+msgstr "目标平台"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:237
+msgid "The Qualcomm NSS/ECM engine is started for hardware acceleration."
+msgstr "Qualcomm NSS/ECM 引擎已启动以进行硬件加速。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:220
+msgid ""
+"The Qualcomm NSS/ECM engine is stopped; accelerated flows are flushed and "
+"the module unloaded."
+msgstr "Qualcomm NSS/ECM 引擎已停止；加速流被清除且模块已卸载。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:255
+msgid ""
+"The firewall page forces flowtable offload off whenever its form is saved, "
+"which will undo this setting. Re-apply this page afterwards if that happens."
+msgstr ""
+"防火墙页面在任何一次表单保存时都会强制关闭 flowtable 卸载，这会撤销此处的设"
+"置。如发生这种情况，请在本页面重新应用。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:242
+msgid "This is the normal operating mode for everyday use."
+msgstr "这是日常使用的常规运行模式。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:239
+msgid ""
+"Throughput rises and CPU load drops, but per-host accounting may under-"
+"report."
+msgstr "吞吐量提升、CPU 负载下降，但按主机统计可能少计。"
+
+#: package/emortal/luci-app-offload-switch/root/usr/share/luci/menu.d/luci-app-offload-switch.json:3
+msgid "Traffic Offload"
+msgstr "流量卸载"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:117
+msgid "Traffic Offload Switch"
+msgstr "流量卸载开关"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:135
+msgid "Unknown"
+msgstr "未知"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:226
+msgid ""
+"Use this while you need trustworthy traffic numbers, then switch back. "
+"Expect lower peak throughput."
+msgstr "当需要可信的流量数据时使用此模式，随后切回。预期峰值吞吐量会降低。"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:343
+msgid "Waiting for device…"
+msgstr "等待设备…"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:216
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:231
+msgid "What will happen"
+msgstr "将会发生什么"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:130
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:131
+msgid "active"
+msgstr "生效中"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:192
+msgid "nlbwmon / conntrack account for all traffic"
+msgstr "nlbwmon / conntrack 可统计全部流量"
+
+#: package/emortal/luci-app-offload-switch/htdocs/luci-static/resources/view/offload/overview.js:127
+msgid "pending"
+msgstr "待应用"

@@ -1,0 +1,17 @@
+{
+	"luci-app-offload-switch": {
+		"description": "Grant access to luci-app-offload-switch",
+		"read": {
+			"ubus": {
+				"luci.offload": [ "status" ]
+			},
+			"uci": [ "offload", "firewall" ]
+		},
+		"write": {
+			"ubus": {
+				"luci.offload": [ "apply" ]
+			},
+			"uci": [ "offload", "firewall" ]
+		}
+	}
+}
