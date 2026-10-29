@@ -11,19 +11,18 @@
  * One page that switches every traffic accelerator on or off, to trade
  * accurate per-host accounting against maximum throughput, and that shows
  * the auto-detected platform and its acceleration engines.
+ *
+ * The chosen goal is staged as an ordinary UCI change to `offload.config.mode`,
+ * so the standard page action footer (Save & Apply / Apply unchecked / Save /
+ * Reset) drives it like any other LuCI page. Committing the change runs the
+ * reconciler through the ucitrack config trigger.
  */
 
 var callStatus = rpc.declare({
 	object: 'luci.offload',
 	method: 'status',
-	expect: { '': {} }
-});
-
-var callApply = rpc.declare({
-	object: 'luci.offload',
-	method: 'apply',
-	params: [ 'mode', 'reboot' ],
-	expect: { '': {} }
+	expect: { '': {} },
+	reject: true
 });
 
 var CSS =
@@ -82,9 +81,11 @@ function engineCard(e) {
 
 	var type = e.hardware ? _('Hardware') : _('Software');
 
+	var extra = e.pending_reboot === true ? [ ' ', badge(_('Reboot pending'), 'pending') ] : '';
+
 	return E('div', { 'class': 'ofs-engine' }, [
 		E('span', { 'class': 'name' }, e.label),
-		E('span', {}, [ state, ' ', ctrl ]),
+		E('span', {}, [ state, ' ', ctrl, extra ]),
 		E('span', { 'class': 'desc' }, [ type, (e.note ? ' — ' + e.note : '') ])
 	]);
 }
@@ -92,23 +93,29 @@ function engineCard(e) {
 return view.extend({
 	load: function() {
 		return Promise.all([
-			L.resolveDefault(callStatus(), {}),
+			callStatus().then(
+				function(status) { return { status: status }; },
+				function(error) { return { status: {}, error: error }; }
+			),
 			uci.load('offload')
 		]);
 	},
 
 	render: function(data) {
-		var st = data[0] || {};
+		var statusResult = data[0] || {};
+		var st = statusResult.status || {};
 		var self = this;
 		var detect = st.detect || {};
 		var engines = st.engines || [];
 		var fullcone = st.fullcone === true;
 		var fullcone_build = st.fullcone_build === true;
 		var has_nss = engines.some(function(e) { return e.id === 'nss-ecm'; });
+		var has_wifi_nss = engines.some(function(e) { return e.id === 'nss-wifi'; });
+		var wifi_nss_active = engines.some(function(e) { return e.id === 'nss-wifi' && e.active === true; });
+		var statusError = statusResult.error;
 
-		var applied = uci.get('offload', 'config', 'mode') || st.mode || 'accelerate';
-		var selected = applied;
-		var reboot = false;
+		var applied = st.mode || uci.get('offload', 'config', 'mode') || 'accelerate';
+		var selected = uci.get('offload', 'config', 'mode') || applied;
 
 		dom.append(document.head, E('style', {}, CSS));
 
@@ -118,6 +125,20 @@ return view.extend({
 			E('p', { 'class': 'ofs-help' },
 				_('Switch every traffic accelerator on or off in one place: choose accurate per-host statistics or maximum routing throughput. The platform and its accelerators are detected automatically.'))
 		]);
+
+		var statusAlert = statusError ? E('div', { 'class': 'alert-message warning' }, [
+			E('strong', {}, _('Unable to read accelerator status.')),
+			E('div', {}, statusError.message || _('The luci.offload status RPC failed. Check rpcd and the package installation.'))
+		]) : null;
+		if (statusAlert)
+			header.appendChild(statusAlert);
+
+		if (st.pending_reboot === true) {
+			header.appendChild(E('div', { 'class': 'alert-message warning' }, [
+				E('strong', {}, _('A reboot is required.')),
+				E('div', {}, _('The Wi-Fi NSS offload setting changed but the running driver still uses the previous value. Reboot the device to apply it.'))
+			]));
+		}
 
 		/* ====================== current-state banner ==================== */
 		var stateBanner = E('div', { 'class': 'ofs-card', 'style': 'margin-bottom:1em;' });
@@ -145,9 +166,11 @@ return view.extend({
 			E('h3', { 'style': 'margin-top:0;' }, _('Detected acceleration engines')),
 			E('p', { 'class': 'ofs-help' },
 				_('Active engines forward established traffic outside the normal CPU path. That is what makes the router fast, and also what makes per-host accounting under-report.')),
-			engines.length
-				? engines.map(engineCard)
-				: E('em', {}, _('No hardware accelerator was detected; only the software network path is used.'))
+			statusError
+				? E('em', {}, _('Engine status is unavailable because the status RPC failed.'))
+				: engines.length
+					? engines.map(engineCard)
+					: E('em', {}, _('No hardware accelerator was detected; only the software network path is used.'))
 		]);
 
 		/* ========================= mode selector ======================= */
@@ -162,13 +185,12 @@ return view.extend({
 			});
 			self.renderExplain();
 			self.renderState();
-			self.renderActions();
 		}
 
 		function modeCard(value, title, tagline, points) {
 			var card = E('div', { 'class': 'ofs-mode', 'data-mode': value }, [
 				E('h4', {}, [
-					E('input', { 'type': 'radio', 'name': 'ofs-mode', 'value': value }),
+					E('input', { 'type': 'radio', 'name': 'ofs-mode', 'value': value, 'checked': selected === value }),
 					title
 				]),
 				E('div', { 'class': 'tagline' }, tagline),
@@ -180,25 +202,26 @@ return view.extend({
 			});
 			card.querySelector('input').addEventListener('change', function() {
 				selected = value;
+				uci.set('offload', 'config', 'mode', value);
 				refreshModes();
 			});
 			return card;
 		}
 
 		var statsCard = modeCard('statistics', _('Statistics mode'),
-			_('Everything off — see every packet.'),
+			_('Acceleration off — keep traffic on the CPU.'),
 			[
-				_('All accelerators stopped'),
-				_('nlbwmon / conntrack account for all traffic'),
+				_('Flowtable, NSS/ECM and Wi-Fi NSS offload turned off'),
+				_('Conntrack / nlbwmon see forwarded flows again'),
 				_('Lower maximum throughput / higher CPU load')
 			]);
 
 		var perfCard = modeCard('accelerate', _('Performance mode'),
-			_('Everything on — fastest routing.'),
+			_('Acceleration on — fastest routing.'),
 			[
 				_('Accelerators enabled where safe'),
 				_('Maximum throughput, lowest CPU load'),
-				_('Per-host accounting may under-report')
+				_('Conntrack-based accounting may under-report')
 			]);
 
 		var modesBlock = E('div', { 'class': 'ofs-card', 'style': 'margin-bottom:1em;' }, [
@@ -219,12 +242,21 @@ return view.extend({
 						has_nss
 							? E('li', {}, _('The Qualcomm NSS/ECM engine is stopped; accelerated flows are flushed and the module unloaded.'))
 							: '',
-						E('li', {}, _('Per-host accounting tools (nlbwmon) and conntrack see every packet.')),
-						E('li', {}, _('Existing connections may be interrupted briefly while the switch happens.'))
+						has_wifi_nss
+							? E('li', {}, _('Wi-Fi NSS offload (ath11k) is turned off. A reboot is needed for this to take effect.'))
+							: '',
+						E('li', {}, _('Forwarded traffic returns to the CPU path, so conntrack / nlbwmon see it again.'))
 					]),
 					E('p', { 'class': 'ofs-help' },
-						_('Use this while you need trustworthy traffic numbers, then switch back. Expect lower peak throughput.'))
+						_('Use this while you need trustworthy per-host numbers, then switch back. Expect lower peak throughput.'))
 				];
+
+				if (has_wifi_nss && wifi_nss_active) {
+					body.push(E('div', { 'class': 'alert-message warning' }, [
+						E('strong', {}, _('A reboot is required.')),
+						E('div', {}, _('The Wi-Fi NSS offload setting is only read when the driver starts, so it stays active until you reboot.'))
+					]));
+				}
 			}
 			else {
 				body = [
@@ -236,7 +268,10 @@ return view.extend({
 						has_nss
 							? E('li', {}, _('The Qualcomm NSS/ECM engine is started for hardware acceleration.'))
 							: '',
-						E('li', {}, _('Throughput rises and CPU load drops, but per-host accounting may under-report.'))
+						has_wifi_nss
+							? E('li', {}, _('Wi-Fi NSS offload (ath11k) is turned on. A reboot is needed for this to take effect.'))
+							: '',
+						E('li', {}, _('Throughput rises and CPU load drops, but conntrack-based accounting (nlbwmon) may under-report.'))
 					]),
 					E('p', { 'class': 'ofs-help' },
 						_('This is the normal operating mode for everyday use.'))
@@ -257,96 +292,49 @@ return view.extend({
 				}
 			}
 
+			body.push(E('p', { 'class': 'ofs-help' },
+				_('Note: accounting differs by tool. conntrack-based tools (nlbwmon) miss hardware-accelerated flows; eBPF/tc tools (bandix) count at the interface and may still see them.')));
+
 			dom.content(explainBox, body);
 		};
 
-		/* ========================= reboot option ======================= */
-		var rebootFlag = E('input', { 'type': 'checkbox', 'id': 'ofs-reboot' });
-		rebootFlag.addEventListener('change', function(ev) { reboot = ev.target.checked; });
-
-		var rebootBlock = E('div', { 'class': 'ofs-card', 'style': 'margin-bottom:1em;' }, [
-			E('h3', { 'style': 'margin-top:0;' }, _('Apply method')),
-			E('label', { 'for': 'ofs-reboot', 'style': 'display:flex;gap:.6em;align-items:flex-start;cursor:pointer;' }, [
-				E('span', {}, rebootFlag),
-				E('span', {}, [
-					E('strong', {}, _('Reboot after applying for a clean state (recommended when switching hardware engines)')),
-					E('div', { 'class': 'ofs-help' },
-						_('Only a reboot fully clears residual accelerated flows and applies the module front-end selection. It costs one short disconnection.'))
-				])
-			]),
-			E('div', { 'class': 'alert-message notice', 'style': 'margin-top:.6em;' }, [
-				E('strong', {}, _('If you do not reboot:')),
-				E('div', {}, _('Changes are applied at runtime — services are started/stopped and the firewall is reloaded. Existing accelerated connections may linger, so accounting can stay inaccurate until those connections expire or the device reboots.'))
-			])
-		]);
-
-		/* ============================ actions ========================== */
-		var applyBtn = E('button', {
-			'class': 'btn cbi-button cbi-button-apply important',
-			'click': ui.createHandlerFn(self, function() { return self.handleApply(selected, reboot); })
-		});
-		self.renderActions = function() {
-			dom.content(applyBtn, selected === applied
-				? _('Apply (no change)')
-				: _('Apply %s').format(selected === 'statistics' ? _('Statistics mode') : _('Performance mode')));
-			applyBtn.disabled = (selected === applied);
-		};
-
-		var actions = E('div', { 'class': 'cbi-page-actions' }, [
-			applyBtn,
-			E('button', {
-				'class': 'btn cbi-button',
-				'click': ui.createHandlerFn(self, function() { location.reload(); })
-			}, _('Refresh'))
-		]);
-
-		self.renderExplain();
-		self.renderActions();
+		refreshModes();
 
 		return E('div', {}, [
 			header,
 			stateBanner,
 			engineBlock,
 			modesBlock,
-			explainBox,
-			rebootBlock,
-			actions
+			explainBox
 		]);
 	},
 
-	handleApply: function(mode, should_reboot) {
-		ui.showModal(_('Applying…'), [
-			E('p', { 'class': 'spinning' }, _('Reconfiguring traffic acceleration…'))
-		]);
+	/* ============================ footer actions ====================== */
 
-		return callApply(mode, should_reboot ? '1' : '0').then(function(res) {
-			ui.hideModal();
-			res = res || {};
+	/* Stage the selected goal into the UCI session without committing it.
+	 * uci.save() reloads the affected configs, which refreshes the header
+	 * "Unsaved Changes" indicator through the uci-loaded event. */
+	stage: function() {
+		return uci.save();
+	},
 
-			if (!res.success) {
-				ui.addNotification(null, E('p', _('Apply failed: %s').format(res.error || '?')), 'error');
-				return;
-			}
-
-			var items = (res.actions || []).map(function(a) { return E('li', {}, a); });
-			var notes = (res.notes || []).map(function(n) { return E('li', {}, n); });
-
-			ui.addNotification(null, E('div', {}, [
-				E('p', {}, [ E('strong', {}, _('Applied:')), ' ',
-					mode === 'statistics' ? _('Statistics mode') : _('Performance mode') ]),
-				items.length ? E('ul', {}, items) : '',
-				notes.length ? E('ul', { 'class': 'ofs-help' }, notes) : ''
-			]), 'info');
-
-			if (should_reboot) {
-				ui.showModal(_('Rebooting…'), [
-					E('p', { 'class': 'spinning' }, _('Waiting for device…'))
-				]);
-				ui.awaitReconnect();
-			}
+	handleSave: function(ev) {
+		return this.stage().then(function() {
+			ui.addNotification(null, E('p', _('Changes have been saved. Use "Save & Apply" to activate them.')), 'info');
 		}).catch(function(err) {
-			ui.hideModal();
-			ui.addNotification(null, E('p', _('Apply failed: %s').format(err.message || err)), 'error');
+			ui.addNotification(null, E('p', _('Unable to save changes: %s').format(err.message || err)), 'error');
 		});
+	},
+
+	handleSaveApply: function(ev, mode) {
+		return this.stage().then(function() {
+			ui.changes.apply(mode == '0');
+		}).catch(function(err) {
+			ui.addNotification(null, E('p', _('Unable to apply changes: %s').format(err.message || err)), 'error');
+		});
+	},
+
+	handleReset: function(ev) {
+		return ui.changes.revert();
 	}
 });

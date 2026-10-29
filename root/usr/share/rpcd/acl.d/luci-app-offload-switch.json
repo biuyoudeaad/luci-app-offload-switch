@@ -5,13 +5,10 @@
 			"ubus": {
 				"luci.offload": [ "status" ]
 			},
-			"uci": [ "offload", "firewall" ]
+			"uci": [ "offload" ]
 		},
 		"write": {
-			"ubus": {
-				"luci.offload": [ "apply" ]
-			},
-			"uci": [ "offload", "firewall" ]
+			"uci": [ "offload" ]
 		}
 	}
 }

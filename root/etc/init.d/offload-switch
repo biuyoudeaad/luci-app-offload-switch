@@ -23,6 +23,7 @@ boot() {
 	start
 }
 
-# Runtime changes go through the RPC backend, so stop/restart are no-ops.
+# Runtime changes commit /etc/config/offload; the ucitrack config trigger then
+# calls this reload action, which re-runs the reconciler.
 stop()  { return 0; }
 reload() { start; }

@@ -4,12 +4,17 @@
 #
 # Reads the desired goal from /etc/config/offload (mode: statistics|accelerate)
 # and maps it onto every traffic accelerator:
-#   - netfilter flowtable      (firewall.@defaults[0].flow_offloading[_hw])
-#   - Qualcomm NSS/ECM         (/etc/init.d/qca-nss-ecm start|stop)
+#   - netfilter flowtable        (firewall.@defaults[0].flow_offloading[_hw])
+#   - Qualcomm NSS/ECM           (/etc/init.d/qca-nss-ecm start|stop)
+#   - Qualcomm Wi-Fi NSS offload (ath11k nss_offload, persisted for next boot)
 #
-# Emits machine-readable result lines for the RPC backend:
+# Emits machine-readable result lines, useful when running it by hand:
 #   ACTION: <what changed>
 #   NOTE:   <warning / caveat>
+#   REBOOT_REQUIRED: <reason>    (a change that only takes effect after reboot)
+#
+# It is triggered at boot (START=95) and whenever /etc/config/offload is
+# committed, through the ucitrack config trigger.
 #
 # Safe to run repeatedly and at boot: it only touches state that differs from
 # the target, so it will not needlessly tear down live accelerated flows.
@@ -18,9 +23,12 @@
 
 CONFIG=offload
 ECM_INIT=/etc/init.d/qca-nss-ecm
+ATH11K_MODFILE=/etc/modules.d/ath11k
+ATH11K_PARAM=/sys/module/ath11k/parameters/nss_offload
 
 log_action() { echo "ACTION: $1"; }
 log_note()   { echo "NOTE: $1"; }
+log_reboot() { echo "REBOOT_REQUIRED: $1"; }
 
 uci_get() { uci -q get "$1" 2>/dev/null; }
 
@@ -56,6 +64,11 @@ set_flowtable() {
 	uci -q set firewall.@defaults[0].flow_offloading_hw="$want"
 	uci -q commit firewall
 
+	# A shell `uci commit` does not raise the procd config.change event, so the
+	# firewall has to be reloaded here for the new flowtable flags to take
+	# effect at runtime.
+	flowtable_changed=1
+
 	if [ "$want" = 1 ]; then
 		log_action "flowtable offload enabled (software + hardware)"
 	else
@@ -68,8 +81,11 @@ set_flowtable() {
 set_ecm() {
 	local want="$1"
 
-	# Keep the boot-time rc.d state in sync so a reboot starts clean, and so
-	# qca-nss-pbuf (START=27) does not silently re-arm the engine on boot.
+	# Keep the boot-time rc.d state in sync so a reboot starts clean. Note the
+	# vendor qca-nss-pbuf init (START=27) can still re-arm the engine on boot
+	# through its ensure_ecm_redirect() helper, which calls qca-nss-ecm start
+	# directly and ignores the rc.d link; offload-switch (START=95) runs after
+	# it and re-asserts the goal.
 	if [ "$want" = 1 ]; then
 		$ECM_INIT enabled >/dev/null 2>&1 || $ECM_INIT enable >/dev/null 2>&1
 	else
@@ -89,6 +105,56 @@ set_ecm() {
 	fi
 }
 
+# --- Qualcomm Wi-Fi NSS offload (ath11k) ---------------------------------
+# ath11k copies the nss_offload module parameter into each radio only while the
+# module initialises, so it cannot be toggled on a running driver. We persist
+# the desired value into /etc/modules.d/ath11k and ask for a reboot when the
+# running value still differs.
+ath11k_present() {
+	[ -f "$ATH11K_MODFILE" ] || [ -e "$ATH11K_PARAM" ]
+}
+
+ath11k_persist_value() {
+	[ -r "$ATH11K_MODFILE" ] || return 1
+	sed -n 's/.*nss_offload=\([0-9][0-9]*\).*/\1/p' "$ATH11K_MODFILE" | head -n 1
+}
+
+ath11k_runtime_value() {
+	[ -r "$ATH11K_PARAM" ] || return 1
+	tr -d '[:space:]' < "$ATH11K_PARAM"
+}
+
+# $1: desired state (0|1)
+set_ath11k() {
+	local want="$1" cur rt
+	ath11k_present || return 0
+
+	if [ -w "$ATH11K_MODFILE" ]; then
+		cur=$(ath11k_persist_value)
+		if [ "$cur" != "$want" ]; then
+			if grep -q 'nss_offload=' "$ATH11K_MODFILE" 2>/dev/null; then
+				sed -i "s/nss_offload=[0-9][0-9]*/nss_offload=$want/" "$ATH11K_MODFILE"
+			else
+				sed -i "1s/\$/ nss_offload=$want/" "$ATH11K_MODFILE"
+			fi
+			if [ "$want" = 1 ]; then
+				log_action "Wi-Fi NSS offload enabled (persisted for next boot)"
+			else
+				log_action "Wi-Fi NSS offload disabled (persisted for next boot)"
+			fi
+		fi
+	else
+		log_note "Cannot persist ath11k nss_offload: $ATH11K_MODFILE is not writable."
+	fi
+
+	# Only a reboot (or a full ath11k reload) applies the change to the running
+	# driver; if the live value still differs, tell the backend.
+	rt=$(ath11k_runtime_value)
+	if [ -n "$rt" ] && [ "$rt" != "$want" ]; then
+		log_reboot "Wi-Fi NSS offload is still '$rt' in the running driver; a reboot is required to change it."
+	fi
+}
+
 apply_mode() {
 	local mode="$1"
 
@@ -96,6 +162,7 @@ apply_mode() {
 		statistics)
 			set_flowtable 0
 			ecm_present && set_ecm 0
+			set_ath11k 0
 			;;
 		accelerate|*)
 			if fullcone_enabled; then
@@ -107,15 +174,22 @@ apply_mode() {
 				set_flowtable 1
 			fi
 			ecm_present && set_ecm 1
+			set_ath11k 1
 			;;
 	esac
 }
 
 main() {
 	local mode
+	flowtable_changed=0
 	mode=$(uci_get "$CONFIG.config.mode")
 	[ -n "$mode" ] || mode=accelerate
 	apply_mode "$mode"
+
+	if [ "$flowtable_changed" = 1 ]; then
+		/etc/init.d/firewall reload >/dev/null 2>&1
+	fi
+
 	exit 0
 }
 

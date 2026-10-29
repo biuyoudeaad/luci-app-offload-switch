@@ -1,0 +1,4 @@
+{
+	"config": "offload",
+	"init": "offload-switch"
+}

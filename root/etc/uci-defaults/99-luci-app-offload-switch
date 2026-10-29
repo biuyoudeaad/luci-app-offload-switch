@@ -1,12 +1,23 @@
 #!/bin/sh
 
-[ -e /etc/config/offload ] || {
+# Install-time defaults.
+if [ ! -e /etc/config/offload ]; then
 	uci -q batch <<-EOF
 		set offload.config=offload
 		set offload.config.mode='accelerate'
 		commit offload
 	EOF
-}
+fi
+
+# One-time migration for installs that picked up an earlier revision which
+# force-defaulted to "statistics". Those configs carry an "option version".
+# Restore normal accelerated operation once, then drop the marker so a later
+# user choice of "statistics" is preserved on subsequent boots.
+if [ -n "$(uci -q get offload.config.version)" ]; then
+	uci -q delete offload.config.version
+	uci -q set offload.config.mode='accelerate'
+	uci -q commit offload
+fi
 
 # Enforce the selected goal at boot, after the vendor NSS/ECM helpers
 # (qca-nss-ecm START=26, qca-nss-pbuf START=27) have run.

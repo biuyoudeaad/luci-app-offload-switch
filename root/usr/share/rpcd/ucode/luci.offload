@@ -2,26 +2,14 @@
 
 'use strict';
 
-import { popen, readfile, stat } from 'fs';
+import { readfile, stat } from 'fs';
 import { cursor } from 'uci';
 
 const CONFIG = 'offload';
-const RECONCILE = '/usr/libexec/offload-switch/reconcile.sh';
 
 /* ------------------------------------------------------------------ *
  * Small helpers
  * ------------------------------------------------------------------ */
-
-function exec(cmd) {
-	let p = popen(cmd + ' 2>&1', 'r');
-	if (!p)
-		return { code: -1, stdout: '' };
-	let out = p.read('all');
-	let code = p.close();
-	if (type(out) == 'string')
-		out = replace(out, /^\s+|\s+$/g, '');
-	return { code: code, stdout: out || '' };
-}
 
 function readtrim(path) {
 	let s = readfile(path);
@@ -45,7 +33,7 @@ function dist_info() {
 	let info = {};
 
 	for (let line in split(rel, '\n')) {
-		let m = match(line, /^(DISTRIB_[A-Z]+)='([^']*)'/);
+		let m = match(line, /^(DISTRIB_[A-Z_]+)='([^']*)'/);
 		if (m)
 			info[m[1]] = m[2];
 	}
@@ -107,6 +95,31 @@ function nss_active() {
 	return exists('/sys/module/ecm');
 }
 
+const ATH11K_MODFILE = '/etc/modules.d/ath11k';
+const ATH11K_PARAM = '/sys/module/ath11k/parameters/nss_offload';
+
+function ath11k_present() {
+	return exists(ATH11K_MODFILE) || exists(ATH11K_PARAM);
+}
+
+function ath11k_runtime_offload() {
+	/* Running value copied into the driver at init; -1 when unavailable. */
+	let v = readtrim(ATH11K_PARAM);
+	if (v == '1' || v == 'Y' || v == 'y')
+		return 1;
+	if (v == '0' || v == 'N' || v == 'n')
+		return 0;
+	return -1;
+}
+
+function ath11k_persisted_offload() {
+	let f = readfile(ATH11K_MODFILE);
+	if (type(f) != 'string')
+		return -1;
+	let m = match(f, /nss_offload=([0-9]+)/);
+	return m ? (m[1] == '1' ? 1 : 0) : -1;
+}
+
 function bcm_steering_present() {
 	return exists('/usr/libexec/platform/packet-steering.sh') ||
 		exists('/usr/libexec/network/packet-steering.uc');
@@ -145,7 +158,7 @@ function engine_list(fwdef, plat) {
 	let engines = [];
 
 	if (has_firewall4()) {
-		engines.push({
+		push(engines, {
 			id: 'flowtable',
 			label: 'Netfilter flowtable',
 			present: true,
@@ -160,7 +173,7 @@ function engine_list(fwdef, plat) {
 	}
 
 	if (nss_present()) {
-		engines.push({
+		push(engines, {
 			id: 'nss-ecm',
 			label: 'Qualcomm NSS ECM (hardware)',
 			present: true,
@@ -168,13 +181,33 @@ function engine_list(fwdef, plat) {
 			hardware: true,
 			controllable: true,
 			note: nss_active()
-				? 'Running: accelerated flows bypass conntrack, so per-host accounting (nlbwmon) under-reports.'
+				? 'Running: accelerated forwarded flows bypass the CPU path, so conntrack-based accounting under-reports.'
 				: 'Stopped.'
 		});
 	}
 
+	if (ath11k_present()) {
+		let rt = ath11k_runtime_offload();
+		let ps = ath11k_persisted_offload();
+		let active = (rt == 1);
+		push(engines, {
+			id: 'nss-wifi',
+			label: 'Qualcomm Wi-Fi NSS offload (ath11k)',
+			present: true,
+			active: active,
+			hardware: true,
+			controllable: true,
+			pending_reboot: (rt != -1 && ps != -1 && (rt == 1) != (ps == 1)),
+			note: active
+				? 'On: Wi-Fi client traffic can bypass the CPU path. Changing it needs a reboot.'
+				: (rt == -1
+					? 'Driver parameter is not readable yet.'
+					: 'Off: Wi-Fi traffic stays on the CPU path.')
+		});
+	}
+
 	if (plat.vendor == 'mediatek' || plat.vendor == 'airoha') {
-		engines.push({
+		push(engines, {
 			id: plat.vendor + '-ppe',
 			label: plat.vendor == 'mediatek' ? 'MediaTek PPE / WED (hardware)' : 'Airoha PPE (hardware)',
 			present: true,
@@ -186,7 +219,7 @@ function engine_list(fwdef, plat) {
 	}
 
 	if (bcm_steering_present()) {
-		engines.push({
+		push(engines, {
 			id: 'packet-steering',
 			label: 'Hardware packet steering',
 			present: true,
@@ -206,6 +239,14 @@ function status_payload() {
 	let u = cursor();
 	u.load(CONFIG);
 
+	let engines = engine_list(fwdef, plat);
+
+	/* A pending reboot is present when any engine reports it. */
+	let pending_reboot = false;
+	for (let e in engines)
+		if (e && e.pending_reboot === true)
+			pending_reboot = true;
+
 	return {
 		platform: plat.platform,
 		vendor: plat.vendor,
@@ -213,100 +254,24 @@ function status_payload() {
 		fullcone: fwdef.fullcone,
 		fullcone_build: fullcone_build(),
 		mode: u.get(CONFIG, 'config', 'mode') || 'accelerate',
-		engines: engine_list(fwdef, plat)
-	};
-}
-
-/* ------------------------------------------------------------------ *
- * Apply
- * ------------------------------------------------------------------ */
-
-function set_mode(mode) {
-	let u = cursor();
-	u.load(CONFIG);
-
-	let sid = null;
-	u.foreach(CONFIG, 'offload', (s) => { if (!sid) sid = s['.name']; });
-	if (!sid)
-		sid = u.add(CONFIG, 'offload', 'config');
-	u.set(CONFIG, sid, 'mode', mode);
-	u.commit(CONFIG);
-}
-
-function run_reconcile() {
-	let actions = [];
-	let notes = [];
-	let r = exec(RECONCILE);
-
-	for (let line in split(r.stdout, '\n')) {
-		let m = match(line, /^ACTION:\s*(.*)$/);
-		if (m) { push(actions, m[1]); continue; }
-		m = match(line, /^NOTE:\s*(.*)$/);
-		if (m) push(notes, m[1]);
-	}
-
-	return { code: r.code, actions: actions, notes: notes, output: r.stdout };
-}
-
-function apply(mode, reboot) {
-	let fwdef = firewall_state();
-	let notes = [];
-
-	if (mode == 'accelerate' && fwdef.fullcone)
-		push(notes, 'FullCone NAT is enabled: flowtable offload kept disabled to keep inbound FullCone mapping consistent.');
-
-	set_mode(mode);
-
-	let rec = run_reconcile();
-	let actions = rec.actions;
-
-	if (rec.code !== 0)
-		push(notes, 'Reconciler exited with code ' + rec.code + '.');
-
-	if (reboot) {
-		push(actions, 'Rebooting to apply cleanly');
-		exec('(sleep 2; /sbin/reboot) >/dev/null 2>&1 &');
-	}
-	else {
-		/* Flowtable changes need a firewall reload to take effect now; the
-		 * vendor engine is already live after the reconciler ran. */
-		let fw = exec('/etc/init.d/firewall reload');
-		if (fw.code !== 0)
-			push(notes, 'firewall reload returned code ' + fw.code + '.');
-		push(notes, 'Applied at runtime. Some accelerator state (module front-end selection, residual flows) may only reset after a reboot.');
-	}
-
-	if (!length(actions))
-		push(actions, mode == 'statistics' ? 'Already in statistics mode; nothing to change.' : 'Already in performance mode; nothing to change.');
-
-	return {
-		success: true,
-		mode: mode,
-		reboot: !!reboot,
-		actions: actions,
-		notes: notes,
-		status: status_payload()
+		pending_reboot: pending_reboot,
+		engines: engines
 	};
 }
 
 /* ------------------------------------------------------------------ *
  * RPC methods
+ *
+ * The page only reads status here. Applying a change is an ordinary UCI
+ * commit of `offload.config.mode`, which the ucitrack config trigger turns
+ * into a reconciler run (/etc/init.d/offload-switch reload).
  * ------------------------------------------------------------------ */
 
 const methods = {
 	status: {
+		args: {},
 		call: function() {
 			return status_payload();
-		}
-	},
-
-	apply: {
-		call: function(request) {
-			let mode = request?.args?.mode;
-			let reboot = request?.args?.reboot === true || request?.args?.reboot === '1';
-			if (mode != 'statistics' && mode != 'accelerate')
-				return { success: false, error: 'invalid mode' };
-			return apply(mode, reboot);
 		}
 	}
 };
